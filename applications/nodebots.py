@@ -7,6 +7,7 @@
 # - (nb:pin_mode PIN_NUMBER PIN_MODE)
 # - (nb:digital_read PIN_NUMBER)
 # - (nb:digital_write PIN_NUMBER PIN_VALUE)
+# - (nb:pwm PIN_NUMBER PIN_VALUE)
 #
 # Resources
 # ~~~~~~~~~
@@ -42,7 +43,8 @@ MODE_SERVO  = 4
 MODE_DAC    = 5
 
 pins_info = {}
-pins_input = []
+pins_input = [] # keep a register of all the current input pins
+pins_pwm = [] # keep a register of all the current pwm pins
 
 def handle_pin_change(pin):              ### hardware pin interrupt handler ###
   pass
@@ -75,6 +77,8 @@ def on_nodebots_message(topic, payload_in):
 
     if pin_number in pins_input:
       pins_input.remove(pin_number)
+    elif pin_number in pins_pwm:
+      pins_pwm.remove(pin_number)
 
     if pin_mode == MODE_INPUT:
       pin = Pin(pin_number, Pin.IN, Pin.PULL_UP)
@@ -84,6 +88,14 @@ def on_nodebots_message(topic, payload_in):
 
     elif pin_mode == MODE_OUTPUT:
       pin = Pin(pin_number, Pin.OUT)
+    elif pin_mode == MODE_PWM:
+      pin = Pin(pin_number, Pin.OUT)
+      pin = machine.PWM(pin)
+      pin.freq(50) # update at 50hz
+      pin.duty(0) # set to off by default
+      pins_pwm.append(pin_number)
+    else:
+      print("Don't know what this pin mode is: " + str(pin_mode))
 
     if pin:
       pins_info[pin_number] = { "mode": pin_mode, "pin": pin }
@@ -98,6 +110,19 @@ def on_nodebots_message(topic, payload_in):
       pin_info = pins_info[pin_number]
       if pin_info["mode"] == MODE_OUTPUT:
         pin_info["pin"].value(value)
+    return True
+  elif payload_in.startswith("(nb:pwm "):
+    tokens = [int(token) for token in payload_in[8:-1].split()]
+    pin_number = tokens[0]
+    value = tokens[1]
+
+    if pin_number in pins_info:
+      pin_info = pins_info[pin_number]
+      pin = pin_info["pin"]
+      if pin_info["mode"] == MODE_PWM:
+        pin.duty(value)
+        pins_info[pin_number]["pin"].duty(value)
+        print(pins_info[pin_number]["pin"])
     return True
 
 def initialise():
